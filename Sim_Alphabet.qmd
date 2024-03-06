@@ -1,0 +1,36 @@
+---
+title: "afj"
+format: html
+editor: visual
+---
+
+## Quarto
+
+```{r}
+# 1000 people in candidate pool
+
+candidate_pool_size <- 1000
+school_number <- 100
+
+candidate_pool <- data.frame(
+  school_rank = rep(1:school_number,candidate_pool_size/school_number),
+  letter = rep(NA,candidate_pool_size)) %>% arrange(school_rank)
+
+letters <- sample(1:26,candidate_pool_size,replace=TRUE)
+
+candidate_pool$letter <- letters
+
+competitiveness <- 10
+
+total_openings <- candidate_pool_size/competitiveness
+
+weight_rank <- 2
+weight_letter <- 1
+candidate_error <- 2
+school_error <- 2
+
+value_of_candidate <- function(weight_rank,weight_letter,candidate_error){
+
+  weight_rank*school_rank+weight_letter*-letter
+  }
+```
