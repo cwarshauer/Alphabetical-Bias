@@ -1,5 +1,5 @@
 ---
-title: "afj"
+title: "Sim_Alphabet"
 format: html
 editor: visual
 ---
@@ -7,30 +7,127 @@ editor: visual
 ## Quarto
 
 ```{r}
-# 1000 people in candidate pool
+# Libraries
+rm(list=ls())
+library(tidyverse)
+
+# Setting the Context
 
 candidate_pool_size <- 1000
 school_number <- 100
-
-candidate_pool <- data.frame(
-  school_rank = rep(1:school_number,candidate_pool_size/school_number),
-  letter = rep(NA,candidate_pool_size)) %>% arrange(school_rank)
-
-letters <- sample(1:26,candidate_pool_size,replace=TRUE)
-
-candidate_pool$letter <- letters
-
+weight_rank <- 10
+candidate_error <- 5
+school_error <- 5
 competitiveness <- 10
 
+# Formula for total job openings, as a function of the pool size and competitiveness
+
 total_openings <- candidate_pool_size/competitiveness
+openings_per_school <- total_openings/school_number
 
-weight_rank <- 2
-weight_letter <- 1
-candidate_error <- 2
-school_error <- 2
+# Function defining the value of a candidate in general
 
-value_of_candidate <- function(weight_rank,weight_letter,candidate_error){
+value_of_candidate <- function(rank_scaled,letter_scaled,weight_rank,weight_letter,candidate_error){
+  weight_rank*-rank_scaled+weight_letter*-letter_scaled+rnorm(1,mean=0,sd=candidate_error) # weight times value + random error incorporating other unobservable candidate attributes like quality
+}
 
-  weight_rank*school_rank+weight_letter*-letter
-  }
+# School Choice Function
+
+school_choice <- function(df,school_error,openings_per_school){
+  top_choices <- df %>%
+  mutate(value_to_school = candidate_value + rnorm(n(),mean=0,sd=school_error)) %>% # assigns each candidate a value based on school's idiosyncratic preferences that differ from observable characteristics of candidates
+  arrange(desc(value_to_school)) %>% # orders DF by value to school
+  slice_head(n = openings_per_school) # extracts only the top-valued candidates
+  
+return(top_choices)
+}
+
+# Initializing Sim
+
+full_results <- data.frame()
+
+for (x in 1:1000){
+
+# Creating A Set of Hypothetical Candidates
+
+candidate_pool <- data.frame(
+  candidate_id = sprintf("%03d", 1:candidate_pool_size),
+  school_origin_rank = rep(1:school_number,candidate_pool_size/school_number)) %>% # an even number from each school
+  mutate(letter = sample(1:26,candidate_pool_size,replace=TRUE)) %>% # adding randomly drawn letter of last name
+  mutate(
+    rank_scaled = as.vector(scale(school_origin_rank)), # scaling school_origin_rank variable
+    letter_scaled = as.vector(scale(letter))) %>% # scaling letter variable
+  arrange(school_origin_rank) # arranging by rank
+
+# Initializing Loop over options
+
+results <- data.frame()
+
+for (w in 1:20){
+  
+weight_letter <- w
+
+# Applying Candidate Value function to each candidate
+
+candidate_pool <- candidate_pool %>%
+  rowwise() %>% 
+  mutate(candidate_value = value_of_candidate(rank_scaled,letter_scaled,weight_rank,weight_letter,candidate_error)) %>% # applies the value_of_candidates function to each row to find each candidates unobserved value
+  ungroup()
+
+# Iterative Application To Schools
+
+remaining_candidate_pool <- candidate_pool # establishes initial value of 
+hired_pool <- data.frame()
+
+for (i in 1:school_number){ # each school selects in turn of its rank
+  selections <- school_choice(remaining_candidate_pool,school_error,openings_per_school) # extracts each school's top candidates from the remaining candidates 
+  selections$School_Hired_Rank <- i # denotes their new school
+  hired_pool <- rbind(hired_pool,selections) # collects these selections in a DF
+  remaining_candidate_pool <- anti_join(remaining_candidate_pool,selections,by="candidate_id") # removes selected candidates from futuring hiring
+}
+
+# Adding Hired Variable to original candidate_pool DF
+
+hired_pool$hired <- 1 
+candidate_pool_regression <- left_join(candidate_pool,hired_pool %>% select(candidate_id, hired),by="candidate_id")
+
+# Regressions
+
+model1 <- lm(School_Hired_Rank ~ school_origin_rank + letter, data = hired_pool) # DV = Placement Rank
+summary(model1)
+
+model2 <- lm(hired ~ school_origin_rank + letter, data = candidate_pool_regression) # DV = Hired or Not
+summary(model2)
+
+# Significance Test
+
+temp_results <- data.frame(
+  rank_test = NA,
+  hired_test = NA
+)
+
+if (sign(coefficients(model1)[3])==1 & summary(model1)$coefficients[,"Pr(>|t|)"][3] <0.05){
+  temp_results$rank_test = 1
+} else {temp_results$rank_test = 0} # if the coefficient for letter is positive and significant, return a 1, otherwise a 0 for the rank test
+
+if (sign(coefficients(model2)[3])==1 & summary(model2)$coefficients[,"Pr(>|t|)"][3] <0.05){
+  temp_results$hired_test = 1
+} else {temp_results$hired_test = 0} # if the coefficient for letter is positive and significant, return a 1, otherwise a 0 for the hired test
+
+results <- rbind(results,temp_results)
+} # close loop over letter weights
+
+results <- cbind(w,results)
+
+full_results <- rbind(full_results,results)
+
+} # closing Sim
+
+  
+full_results <- full_results %>%
+  group_by(w) %>%
+  summarize(
+    Rank_Test = mean(rank_test),
+    Hired_Test = mean(hired_test)
+  )
 ```
