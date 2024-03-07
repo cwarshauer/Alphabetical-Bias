@@ -59,7 +59,7 @@ candidate_pool <- data.frame(
     letter_scaled = as.vector(scale(letter))) %>% # scaling letter variable
   arrange(school_origin_rank) # arranging by rank
 
-# Initializing Loop over options
+# Initializing Loop over weights
 
 results <- data.frame()
 
@@ -94,10 +94,8 @@ candidate_pool_regression <- left_join(candidate_pool,hired_pool %>% select(cand
 # Regressions
 
 model1 <- lm(School_Hired_Rank ~ school_origin_rank + letter, data = hired_pool) # DV = Placement Rank
-summary(model1)
 
 model2 <- lm(hired ~ school_origin_rank + letter, data = candidate_pool_regression) # DV = Hired or Not
-summary(model2)
 
 # Significance Test
 
@@ -114,10 +112,8 @@ if (sign(coefficients(model2)[3])==1 & summary(model2)$coefficients[,"Pr(>|t|)"]
   temp_results$hired_test = 1
 } else {temp_results$hired_test = 0} # if the coefficient for letter is positive and significant, return a 1, otherwise a 0 for the hired test
 
-results <- rbind(results,temp_results)
+results <- cbind(w,temp_results)
 } # close loop over letter weights
-
-results <- cbind(w,results)
 
 full_results <- rbind(full_results,results)
 
