@@ -44,6 +44,7 @@ return(top_choices)
 
 # Initializing Sim
 
+pb <- txtProgressBar(min = 0, max = 1000, style = 3) # set a progress bar
 full_results <- data.frame()
 
 for (x in 1:1000){
@@ -64,7 +65,7 @@ candidate_pool <- data.frame(
 results <- data.frame()
 
 for (w in 1:20){
-  
+
 weight_letter <- w
 
 # Applying Candidate Value function to each candidate
@@ -89,33 +90,44 @@ for (i in 1:school_number){ # each school selects in turn of its rank
 # Adding Hired Variable to original candidate_pool DF
 
 hired_pool$hired <- 1 
-candidate_pool_regression <- left_join(candidate_pool,hired_pool %>% select(candidate_id, hired),by="candidate_id")
+candidate_pool_regression <- left_join(candidate_pool,hired_pool %>% select(candidate_id, hired),by="candidate_id") %>%
+  mutate(hired = ifelse(is.na(hired),0,1))
 
 # Regressions
 
 model1 <- lm(School_Hired_Rank ~ school_origin_rank + letter, data = hired_pool) # DV = Placement Rank
 
-model2 <- lm(hired ~ school_origin_rank + letter, data = candidate_pool_regression) # DV = Hired or Not
+model2 <- glm(hired ~ school_origin_rank + letter, data = candidate_pool_regression,family=binomial(link="logit")) # DV = Hired or Not
+
+model3 <- lm(school_origin_rank ~ School_Hired_Rank + letter, data = hired_pool) # DV is school of origin -- testing for differential effects in hiring that do not appear in rank data
 
 # Significance Test
 
 temp_results <- data.frame(
   rank_test = NA,
-  hired_test = NA
+  hired_test = NA,
+  inverted_test = NA
 )
 
 if (sign(coefficients(model1)[3])==1 & summary(model1)$coefficients[,"Pr(>|t|)"][3] <0.05){
   temp_results$rank_test = 1
 } else {temp_results$rank_test = 0} # if the coefficient for letter is positive and significant, return a 1, otherwise a 0 for the rank test
 
-if (sign(coefficients(model2)[3])==1 & summary(model2)$coefficients[,"Pr(>|t|)"][3] <0.05){
+if (sign(coefficients(model2)[3])==-1 & summary(model2)$coefficients[,"Pr(>|z|)"][3] <0.05){
   temp_results$hired_test = 1
 } else {temp_results$hired_test = 0} # if the coefficient for letter is positive and significant, return a 1, otherwise a 0 for the hired test
 
-results <- cbind(w,temp_results)
+if (sign(coefficients(model3)[3])==-1 & summary(model3)$coefficients[,"Pr(>|t|)"][3] <0.05){
+  temp_results$inverted_test = 1
+} else {temp_results$inverted_test = 0} # if the coefficient for letter is positive and significant, return a 1, otherwise a 0 for the hired test
+
+temp_results <- cbind(w,temp_results)
+results <- rbind(results, temp_results)
+ 
 } # close loop over letter weights
 
 full_results <- rbind(full_results,results)
+setTxtProgressBar(pb, x) # updates progress bar
 
 } # closing Sim
 
@@ -124,6 +136,7 @@ full_results <- full_results %>%
   group_by(w) %>%
   summarize(
     Rank_Test = mean(rank_test),
-    Hired_Test = mean(hired_test)
+    Hired_Test = mean(hired_test),
+    Inverted_test = mean(inverted_test)
   )
 ```
