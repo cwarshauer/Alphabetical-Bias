@@ -10,15 +10,19 @@ editor: visual
 # Libraries
 rm(list=ls())
 library(tidyverse)
+library(purrr)
+library(parallel)
 
 # Setting the Context
 
 candidate_pool_size <- 1000
 school_number <- 100
-weight_rank <- 10
-candidate_error <- 5
-school_error <- 5
+weight_rank <- 400
+candidate_error <- 200
+school_error <- 200
 competitiveness <- 10
+scale_options <- c(1,2,3,4,5,10,20,30,40,50,60,70,80,90,100,150,200,250,300,350,400)
+numCores <- detectCores()-1
 
 # Formula for total job openings, as a function of the pool size and competitiveness
 
@@ -47,14 +51,16 @@ return(top_choices)
 pb <- txtProgressBar(min = 0, max = 1000, style = 3) # set a progress bar
 full_results <- data.frame()
 
-for (x in 1:1000){
+results_list <- mclapply(1:1000,function(x){
 
 # Creating A Set of Hypothetical Candidates
 
+
 candidate_pool <- data.frame(
-  candidate_id = sprintf("%03d", 1:candidate_pool_size),
-  school_origin_rank = rep(1:school_number,candidate_pool_size/school_number)) %>% # an even number from each school
-  mutate(letter = sample(1:26,candidate_pool_size,replace=TRUE)) %>% # adding randomly drawn letter of last name
+  candidate_id = sprintf("%05d", 1:(candidate_pool_size*10)),
+  year = rep(1:10,each = candidate_pool_size), # adding a year variable
+  school_origin_rank = rep(1:school_number,candidate_pool_size*10/school_number)) %>% # an even number from each school
+  mutate(letter = sample(1:26,candidate_pool_size*10,replace=TRUE)) %>% # adding randomly drawn letter of last name
   mutate(
     rank_scaled = as.vector(scale(school_origin_rank)), # scaling school_origin_rank variable
     letter_scaled = as.vector(scale(letter))) %>% # scaling letter variable
@@ -63,13 +69,13 @@ candidate_pool <- data.frame(
 # Initializing Loop over weights
 
 results <- data.frame()
+temp_results <- data.frame()
 
-for (w in 1:20){
-
-weight_letter <- w
-
+results <- map(scale_options,function(weight_letter) {
+  
 # Applying Candidate Value function to each candidate
 
+  
 candidate_pool <- candidate_pool %>%
   rowwise() %>% 
   mutate(candidate_value = value_of_candidate(rank_scaled,letter_scaled,weight_rank,weight_letter,candidate_error)) %>% # applies the value_of_candidates function to each row to find each candidates unobserved value
@@ -77,15 +83,20 @@ candidate_pool <- candidate_pool %>%
 
 # Iterative Application To Schools
 
-remaining_candidate_pool <- candidate_pool # establishes initial value of 
-hired_pool <- data.frame()
+hired_pool <- data.frame() # initializing empty DF of hired candidates 
+
+for (y in 1:10){
+  
+current_year_candidates <- candidate_pool %>% filter(year == y) # isolating the current year of candidates
+remaining_candidate_pool <- current_year_candidates # intializing remaining candidates
 
 for (i in 1:school_number){ # each school selects in turn of its rank
   selections <- school_choice(remaining_candidate_pool,school_error,openings_per_school) # extracts each school's top candidates from the remaining candidates 
   selections$School_Hired_Rank <- i # denotes their new school
   hired_pool <- rbind(hired_pool,selections) # collects these selections in a DF
   remaining_candidate_pool <- anti_join(remaining_candidate_pool,selections,by="candidate_id") # removes selected candidates from futuring hiring
-}
+} # closes single year loop over schools choosing
+} # closes loop over years
 
 # Adding Hired Variable to original candidate_pool DF
 
@@ -119,24 +130,23 @@ if (sign(coefficients(model2)[3])==-1 & summary(model2)$coefficients[,"Pr(>|z|)"
 
 if (sign(coefficients(model3)[3])==-1 & summary(model3)$coefficients[,"Pr(>|t|)"][3] <0.05){
   temp_results$inverted_test = 1
-} else {temp_results$inverted_test = 0} # if the coefficient for letter is positive and significant, return a 1, otherwise a 0 for the hired test
+} else {temp_results$inverted_test = 0} # if the coefficient for letter is positive and significant, return a 1, otherwise a 0 for the inverse test
 
-temp_results <- cbind(w,temp_results)
-results <- rbind(results, temp_results)
- 
-} # close loop over letter weights
+temp_results <- cbind(weight_letter,temp_results)
+}) %>% bind_rows(temp_results)
 
 full_results <- rbind(full_results,results)
 setTxtProgressBar(pb, x) # updates progress bar
 
-} # closing Sim
+},mc.cores=numCores) # closing Sim
 
-  
-full_results <- full_results %>%
+full_results <- bind_rows(results_list)  
+
+final_results <- full_results %>%
   group_by(w) %>%
   summarize(
     Rank_Test = mean(rank_test),
     Hired_Test = mean(hired_test),
-    Inverted_test = mean(inverted_test)
+    Inverted_Test = mean(inverted_test)
   )
 ```
