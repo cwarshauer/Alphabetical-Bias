@@ -51,7 +51,7 @@ return(top_choices)
 pb <- txtProgressBar(min = 0, max = 1000, style = 3) # set a progress bar
 full_results <- data.frame()
 
-results_list <- mclapply(1:1000,function(x){
+for (x in 1:1000){
 
 # Creating A Set of Hypothetical Candidates
 
@@ -75,17 +75,16 @@ results <- map(scale_options,function(weight_letter) {
   
 # Applying Candidate Value function to each candidate
 
-  
 candidate_pool <- candidate_pool %>%
   rowwise() %>% 
   mutate(candidate_value = value_of_candidate(rank_scaled,letter_scaled,weight_rank,weight_letter,candidate_error)) %>% # applies the value_of_candidates function to each row to find each candidates unobserved value
-  ungroup()
-
+  ungroup() 
+  
 # Iterative Application To Schools
 
 hired_pool <- data.frame() # initializing empty DF of hired candidates 
 
-for (y in 1:10){
+for (y in 1:20){
   
 current_year_candidates <- candidate_pool %>% filter(year == y) # isolating the current year of candidates
 remaining_candidate_pool <- current_year_candidates # intializing remaining candidates
@@ -138,15 +137,18 @@ temp_results <- cbind(weight_letter,temp_results)
 full_results <- rbind(full_results,results)
 setTxtProgressBar(pb, x) # updates progress bar
 
-},mc.cores=numCores) # closing Sim
-
-full_results <- bind_rows(results_list)  
+} # closing Sim
 
 final_results <- full_results %>%
-  group_by(w) %>%
+  group_by(weight_letter) %>%
   summarize(
     Rank_Test = mean(rank_test),
     Hired_Test = mean(hired_test),
     Inverted_Test = mean(inverted_test)
   )
+
+final_results <- final_results %>% mutate(
+  weight_letter = weight_letter/400
+)
+
 ```
